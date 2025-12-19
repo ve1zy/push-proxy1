@@ -1,5 +1,4 @@
 import { SignJWT, importPKCS8 } from "jose";
-import { readFileSync } from "fs";
 
 // ---------- Logging ----------
 const log = (msg: string, data?: unknown) => {
@@ -16,10 +15,7 @@ const logErr = (msg: string, err: unknown) => {
 };
 
 // ---------- Config ----------
-// ---------- Config ----------
-import { readFileSync } from "fs";
-
-const SA = JSON.parse(readFileSync("../service-account.json", "utf8"));
+const SA = JSON.parse(process.env.SERVICE_ACCOUNT_JSON || "{}");
 const {
   project_id: PROJECT_ID,
   client_email: CLIENT_EMAIL,
@@ -27,7 +23,7 @@ const {
 } = SA;
 
 if (!PRIVATE_KEY?.trim()) {
-  throw new Error("Missing private_key in service-account.json");
+  throw new Error("Missing private_key in SERVICE_ACCOUNT_JSON");
 }
 
 const FCM_URL = `https://fcm.googleapis.com/v1/projects/${PROJECT_ID}/messages:send`;
@@ -168,7 +164,7 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
   const title = payload.channel_name || payload.sender_name || "Mattermost";
   const body = typeof payload.message === "string" ? payload.message : "";
 
-  const data: Record<string, string> = {};
+  const  Record<string, string> = {};
   for (const key of [
     "ack_id", "server_id", "channel_id", "channel_name", "sender_id",
     "sender_name", "category", "type", "badge", "post_id", "version"
