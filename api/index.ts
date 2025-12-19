@@ -154,7 +154,7 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
 
   if (type === "test") return new Response("OK", { status: 200 });
   if (type !== "message" && type !== "clear") return new Response("Bad type", { status: 400 });
-  if (type === "clear") return new Response("OK", { status: 400 });
+  if (type === "clear") return new Response("OK", { status: 200 });
 
   let p = platform;
   if (p === "android_rn" || p === "android_rn-v2") p = "android";
@@ -195,7 +195,8 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
 // ---------- HTTP Handler ----------
 export default async function handler(req: Request): Promise<Response> {
   const id = crypto.randomUUID();
-  const url = new URL(req.url);
+  // Используем только pathname из req.url
+  const url = new URL(req.url, `https://${req.headers.get("host") || "localhost"}`);
 
   // Manual trigger for VIP
   if (req.method === "POST" && url.pathname === "/broadcast-vip") {
