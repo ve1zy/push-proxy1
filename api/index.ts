@@ -1,4 +1,4 @@
-import { SignJWT } from "jose";
+import { SignJWT, importPKCS8 } from "jose";
 
 // ---------- Logging ----------
 const log = (msg: string, data?: unknown) => {
@@ -30,15 +30,7 @@ const FCM_URL = `https://fcm.googleapis.com/v1/projects/${PROJECT_ID}/messages:s
 
 // ---------- Auth ----------
 async function getAccessToken(): Promise<string> {
-  const encoder = new TextEncoder();
-  const keyBytes = encoder.encode(PRIVATE_KEY);
-  const key = await crypto.subtle.importKey(
-    "pkcs8",
-    keyBytes,
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
+  const privateKey = await importPKCS8(PRIVATE_KEY, "RS256");
 
   const jwt = await new SignJWT({
     iss: CLIENT_EMAIL,
@@ -48,7 +40,9 @@ async function getAccessToken(): Promise<string> {
     iat: Math.floor(Date.now() / 1000),
   })
     .setProtectedHeader({ alg: "RS256", typ: "JWT" })
-    .sign(key);
+    .sign(privateKey);
+
+  log("Generated JWT", { jwt: jwt.substring(0, 100) + "..." });
 
   const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
@@ -237,5 +231,5 @@ export default async function handler(req: Request): Promise<Response> {
 
 // ---------- Export for Vercel Node.js Runtime ----------
 export const config = {
-  runtime: "nodejs18.x",
+  runtime: "nodejs",
 };
