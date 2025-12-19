@@ -154,7 +154,7 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
 
   if (type === "test") return new Response("OK", { status: 200 });
   if (type !== "message" && type !== "clear") return new Response("Bad type", { status: 400 });
-  if (type === "clear") return new Response("OK", { status: 200 });
+  if (type === "clear") return new Response("OK", { status: 400 });
 
   let p = platform;
   if (p === "android_rn" || p === "android_rn-v2") p = "android";
@@ -164,7 +164,7 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
   const title = payload.channel_name || payload.sender_name || "Mattermost";
   const body = typeof payload.message === "string" ? payload.message : "";
 
-  const data: Record<string, string> = {};
+  const  Record<string, string> = {};
   for (const key of [
     "ack_id", "server_id", "channel_id", "channel_name", "sender_id",
     "sender_name", "category", "type", "badge", "post_id", "version"
@@ -195,12 +195,13 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
 // ---------- HTTP Handler ----------
 export default async function handler(req: Request): Promise<Response> {
   const id = crypto.randomUUID();
-  // Используем только pathname из req.url
-  const url = new URL(req.url, `https://${req.headers.get("host") || "localhost"}`);
+
+  // Исправленный способ получения pathname
+  const url = new URL(req.url, `https://example.com`); // используем фиктивный домен
 
   // Manual trigger for VIP
   if (req.method === "POST" && url.pathname === "/broadcast-vip") {
-    const auth = req.headers.get("Authorization");
+    const auth = (req as any).headers.authorization; // используем как объект
     if (auth !== "Bearer sYne9ZHEflIFrFwHXKjie05rDSqoJOrKaqlAgL4QF/0=") {
       return new Response("Unauthorized", { status: 401 });
     }
