@@ -167,7 +167,7 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
   const title = payload.channel_name || payload.sender_name || "Mattermost";
   const body = typeof payload.message === "string" ? payload.message : "";
 
-  const  Record<string, string> = {};
+  const data = {};
   for (const key of [
     "ack_id", "server_id", "channel_id", "channel_name", "sender_id",
     "sender_name", "category", "type", "badge", "post_id", "version"
