@@ -155,7 +155,7 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
 
   if (type === "test") return new Response("OK", { status: 200 });
   if (type !== "message" && type !== "clear") return new Response("Bad type", { status: 400 });
-  if (type === "clear") return new Response("OK", { status: 400 });
+  if (type === "clear") return new Response("OK", { status: 200 });
 
   let p = platform;
   if (p === "android_rn" || p === "android_rn-v2") p = "android";
@@ -165,7 +165,7 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
   const title = payload.channel_name || payload.sender_name || "Mattermost";
   const body = typeof payload.message === "string" ? payload.message : "";
 
-  const  Record<string, string> = {};
+  const data: Record<string, string> = {};
   for (const key of [
     "ack_id", "server_id", "channel_id", "channel_name", "sender_id",
     "sender_name", "category", "type", "badge", "post_id", "version"
