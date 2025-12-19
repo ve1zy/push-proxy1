@@ -154,7 +154,7 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
 
   if (type === "test") return new Response("OK", { status: 200 });
   if (type !== "message" && type !== "clear") return new Response("Bad type", { status: 400 });
-  if (type === "clear") return new Response("OK", { status: 200 });
+  if (type === "clear") return new Response("OK", { status: 400 });
 
   let p = platform;
   if (p === "android_rn" || p === "android_rn-v2") p = "android";
