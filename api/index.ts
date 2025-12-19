@@ -1,12 +1,4 @@
-// ---------- PEM → DER ----------
-function pemToDer(pem: string): ArrayBuffer {
-  const cleaned = pem
-    .replace(/\r?\n|\r/g, "")
-    .replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----/g, "")
-    .trim();
-  const binary = atob(cleaned);
-  return new Uint8Array(binary.split("").map((c) => c.charCodeAt(0))).buffer;
-}
+import { SignJWT } from "jose";
 
 // ---------- Logging ----------
 const log = (msg: string, data?: unknown) => {
@@ -36,57 +28,27 @@ if (!PRIVATE_KEY?.trim()) {
 
 const FCM_URL = `https://fcm.googleapis.com/v1/projects/${PROJECT_ID}/messages:send`;
 
-// ---------- Base64 helpers ----------
-function base64url(str: string) {
-  return btoa(str)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=/g, "");
-}
-
-// ---------- Create JWT manually ----------
-async function createJWT(header: object, payload: object, key: CryptoKey): Promise<string> {
-  const encodedHeader = base64url(JSON.stringify(header));
-  const encodedPayload = base64url(JSON.stringify(payload));
-
-  const data = `${encodedHeader}.${encodedPayload}`;
-  const encoder = new TextEncoder();
-  const encodedData = encoder.encode(data);
-
-  const signature = await crypto.subtle.sign(
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    key,
-    encodedData
-  );
-
-  const signatureBytes = new Uint8Array(signature);
-  const signatureB64 = btoa(String.fromCharCode(...signatureBytes));
-  const signatureFinal = base64url(signatureB64);
-
-  return `${data}.${signatureFinal}`;
-}
-
 // ---------- Auth ----------
 async function getAccessToken(): Promise<string> {
+  const encoder = new TextEncoder();
+  const keyBytes = encoder.encode(PRIVATE_KEY);
   const key = await crypto.subtle.importKey(
     "pkcs8",
-    pemToDer(PRIVATE_KEY),
+    keyBytes,
     { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
     false,
     ["sign"]
   );
 
-  const jwt = await createJWT(
-    { alg: "RS256", typ: "JWT" },
-    {
-      iss: CLIENT_EMAIL,
-      scope: "https://www.googleapis.com/auth/firebase.messaging",
-      aud: "https://oauth2.googleapis.com/token",
-      exp: Math.floor(Date.now() / 1000) + 3600,
-      iat: Math.floor(Date.now() / 1000),
-    },
-    key
-  );
+  const jwt = await new SignJWT({
+    iss: CLIENT_EMAIL,
+    scope: "https://www.googleapis.com/auth/firebase.messaging",
+    aud: "https://oauth2.googleapis.com/token",
+    exp: Math.floor(Date.now() / 1000) + 3600,
+    iat: Math.floor(Date.now() / 1000),
+  })
+    .setProtectedHeader({ alg: "RS256", typ: "JWT" })
+    .sign(key);
 
   const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
@@ -208,7 +170,7 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
   const title = payload.channel_name || payload.sender_name || "Mattermost";
   const body = typeof payload.message === "string" ? payload.message : "";
 
-  const data: Record<string, string> = {};
+  const  Record<string, string> = {};
   for (const key of [
     "ack_id", "server_id", "channel_id", "channel_name", "sender_id",
     "sender_name", "category", "type", "badge", "post_id", "version"
@@ -273,7 +235,7 @@ export default async function handler(req: Request): Promise<Response> {
   return handleMattermost(payload, id);
 }
 
-// ---------- Export for Vercel Edge Runtime ----------
+// ---------- Export for Vercel Node.js Runtime ----------
 export const config = {
-  runtime: "edge",
+  runtime: "nodejs18.x",
 };
