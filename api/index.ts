@@ -15,7 +15,7 @@ const logErr = (msg: string, err: unknown) => {
 };
 
 // ---------- Config ----------
-const SA = JSON.parse(service-accounts.json || "{}");
+const SA = JSON.parse(process.env.SERVICE_ACCOUNT_JSON || "{}");
 const {
   project_id: PROJECT_ID,
   client_email: CLIENT_EMAIL,
@@ -164,7 +164,7 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
   const title = payload.channel_name || payload.sender_name || "Mattermost";
   const body = typeof payload.message === "string" ? payload.message : "";
 
-  const  Record<string, string> = {};
+  const data: Record<string, string> = {};
   for (const key of [
     "ack_id", "server_id", "channel_id", "channel_name", "sender_id",
     "sender_name", "category", "type", "badge", "post_id", "version"
