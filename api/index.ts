@@ -30,6 +30,7 @@ const FCM_URL = `https://fcm.googleapis.com/v1/projects/${PROJECT_ID}/messages:s
 
 // ---------- Auth ----------
 async function getAccessToken(): Promise<string> {
+  // Используем importPKCS8 — он принимает PEM-строку
   const privateKey = await importPKCS8(PRIVATE_KEY, "RS256");
 
   const jwt = await new SignJWT({
@@ -154,7 +155,7 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
 
   if (type === "test") return new Response("OK", { status: 200 });
   if (type !== "message" && type !== "clear") return new Response("Bad type", { status: 400 });
-  if (type === "clear") return new Response("OK", { status: 200 });
+  if (type === "clear") return new Response("OK", { status: 400 });
 
   let p = platform;
   if (p === "android_rn" || p === "android_rn-v2") p = "android";
@@ -164,7 +165,7 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
   const title = payload.channel_name || payload.sender_name || "Mattermost";
   const body = typeof payload.message === "string" ? payload.message : "";
 
-  const data: Record<string, string> = {};
+  const  Record<string, string> = {};
   for (const key of [
     "ack_id", "server_id", "channel_id", "channel_name", "sender_id",
     "sender_name", "category", "type", "badge", "post_id", "version"
