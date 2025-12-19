@@ -16,6 +16,9 @@ const logErr = (msg: string, err: unknown) => {
 };
 
 // ---------- Config ----------
+// ---------- Config ----------
+import { readFileSync } from "fs";
+
 const SA = JSON.parse(readFileSync("../service-account.json", "utf8"));
 const {
   project_id: PROJECT_ID,
