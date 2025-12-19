@@ -152,6 +152,7 @@ interface MattermostPayload {
 }
 
 // ---------- Mattermost push ----------
+// ---------- Mattermost push ----------
 async function handleMattermost(payload: MattermostPayload, id: string) {
   const { type, platform, device_id: token } = payload;
 
@@ -167,7 +168,7 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
   const title = payload.channel_name || payload.sender_name || "Mattermost";
   const body = typeof payload.message === "string" ? payload.message : "";
 
-const Record;
+  const data: Record<string, string> = {};
   for (const key of [
     "ack_id", "server_id", "channel_id", "channel_name", "sender_id",
     "sender_name", "category", "type", "badge", "post_id", "version"
@@ -194,7 +195,6 @@ const Record;
 
   return new Response("OK", { status: 200 });
 }
-
 // ---------- HTTP Handler ----------
 export default async function handler(req: any, res: any): Promise<void> {
   const id = crypto.randomUUID();
