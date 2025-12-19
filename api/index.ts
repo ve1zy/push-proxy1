@@ -164,7 +164,7 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
   const title = payload.channel_name || payload.sender_name || "Mattermost";
   const body = typeof payload.message === "string" ? payload.message : "";
 
-  const data: Record<string, string> = {};
+  const  Record<string, string> = {};
   for (const key of [
     "ack_id", "server_id", "channel_id", "channel_name", "sender_id",
     "sender_name", "category", "type", "badge", "post_id", "version"
@@ -193,7 +193,7 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
 }
 
 // ---------- HTTP Handler ----------
-export default async function handler(req: Request): Promise<Response> {
+export default async function handler(req: any, res: any): Promise<void> {
   const id = crypto.randomUUID();
 
   // Исправленный способ получения pathname
@@ -201,34 +201,47 @@ export default async function handler(req: Request): Promise<Response> {
 
   // Manual trigger for VIP
   if (req.method === "POST" && url.pathname === "/broadcast-vip") {
-    const auth = (req as any).headers.authorization; // используем как объект
+    const auth = req.headers.authorization;
     if (auth !== "Bearer sYne9ZHEflIFrFwHXKjie05rDSqoJOrKaqlAgL4QF/0=") {
-      return new Response("Unauthorized", { status: 401 });
+      res.status(401).send("Unauthorized");
+      return;
     }
     log(`[${id}] Manual VIP broadcast triggered`);
     broadcastVip(); // fire-and-forget
-    return new Response("OK", { status: 202 });
+    res.status(202).send("OK");
+    return;
   }
 
   // Mattermost push
   if (req.method !== "POST") {
-    return new Response("Method Not Allowed", { status: 405 });
+    res.status(405).send("Method Not Allowed");
+    return;
   }
 
+  // Читаем тело запроса как JSON в Node.js
   let payload;
   try {
-    payload = await req.json();
+    let body = "";
+    req.on("data", (chunk: string) => {
+      body += chunk;
+    });
+    await new Promise((resolve) => req.on("end", resolve));
+
+    payload = JSON.parse(body);
   } catch (e) {
     logErr(`[${id}] Invalid JSON`, e);
-    return new Response("Invalid JSON", { status: 400 });
+    res.status(400).send("Invalid JSON");
+    return;
   }
 
   if (typeof payload !== "object" || payload === null) {
-    return new Response("Payload must be an object", { status: 400 });
+    res.status(400).send("Payload must be an object");
+    return;
   }
 
   log(`[${id}] Mattermost request`, payload);
-  return handleMattermost(payload, id);
+  await handleMattermost(payload, id);
+  res.status(200).send("OK");
 }
 
 // ---------- Export for Vercel Node.js Runtime ----------
