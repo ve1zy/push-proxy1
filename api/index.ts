@@ -1,4 +1,5 @@
 import { SignJWT, importPKCS8 } from "jose";
+import { readFileSync } from "fs";
 
 // ---------- Logging ----------
 const log = (msg: string, data?: unknown) => {
@@ -15,7 +16,7 @@ const logErr = (msg: string, err: unknown) => {
 };
 
 // ---------- Config ----------
-const SA = JSON.parse(process.env.SERVICE_ACCOUNT_JSON || "{}");
+const SA = JSON.parse(readFileSync("./service-account.json", "utf8"));
 const {
   project_id: PROJECT_ID,
   client_email: CLIENT_EMAIL,
@@ -23,7 +24,7 @@ const {
 } = SA;
 
 if (!PRIVATE_KEY?.trim()) {
-  throw new Error("Missing private_key in SERVICE_ACCOUNT_JSON");
+  throw new Error("Missing private_key in service-account.json");
 }
 
 const FCM_URL = `https://fcm.googleapis.com/v1/projects/${PROJECT_ID}/messages:send`;
