@@ -152,7 +152,6 @@ interface MattermostPayload {
 }
 
 // ---------- Mattermost push ----------
-// ---------- Mattermost push ----------
 async function handleMattermost(payload: MattermostPayload, id: string) {
   const { type, platform, device_id: token } = payload;
 
@@ -195,6 +194,7 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
 
   return new Response("OK", { status: 200 });
 }
+
 // ---------- HTTP Handler ----------
 export default async function handler(req: any, res: any): Promise<void> {
   const id = crypto.randomUUID();
