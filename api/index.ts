@@ -134,6 +134,7 @@ async function broadcastVip() {
     },
     android: {
       notification: {
+        channelId: "mattermost",
         sound: "default",
       },
     },
