@@ -1,6 +1,4 @@
-import { createRemoteJWKSet, jwtVerify } from "https://deno.land/x/jose@v4.15.5/index.ts";
-import { create, encodeBase64, decodeBase64 } from "https://deno.land/x/jose@v4.15.5/index.ts";
-import { serve } from "https://deno.land/std@0.208.0/http/server.ts";
+import { SignJWT } from "jose";
 
 // ---------- PEM → DER ----------
 function pemToDer(pem: string): ArrayBuffer {
@@ -50,17 +48,15 @@ async function getAccessToken(): Promise<string> {
     ["sign"]
   );
 
-  const jwt = await create(
-    { alg: "RS256", typ: "JWT" },
-    {
-      iss: CLIENT_EMAIL,
-      scope: "https://www.googleapis.com/auth/firebase.messaging",
-      aud: "https://oauth2.googleapis.com/token",
-      exp: Math.floor(Date.now() / 1000) + 3600,
-      iat: Math.floor(Date.now() / 1000),
-    },
-    key
-  );
+  const jwt = await new SignJWT({
+    iss: CLIENT_EMAIL,
+    scope: "https://www.googleapis.com/auth/firebase.messaging",
+    aud: "https://oauth2.googleapis.com/token",
+    exp: Math.floor(Date.now() / 1000) + 3600,
+    iat: Math.floor(Date.now() / 1000),
+  })
+    .setProtectedHeader({ alg: "RS256", typ: "JWT" })
+    .sign(key);
 
   const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
@@ -181,7 +177,7 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
   const title = payload.channel_name || payload.sender_name || "Mattermost";
   const body = typeof payload.message === "string" ? payload.message : "";
 
-  const  Record<string, string> = {};
+  const data: Record<string, string> = {};
   for (const key of [
     "ack_id", "server_id", "channel_id", "channel_name", "sender_id",
     "sender_name", "category", "type", "badge", "post_id", "version"
@@ -215,7 +211,7 @@ export default async function handler(req: Request): Promise<Response> {
   const url = new URL(req.url);
 
   // Manual trigger for VIP
-  if (req.method === "POST" && url.pathname === "/api/broadcast-vip") {
+  if (req.method === "POST" && url.pathname === "/broadcast-vip") {
     const auth = req.headers.get("Authorization");
     if (auth !== "Bearer sYne9ZHEflIFrFwHXKjie05rDSqoJOrKaqlAgL4QF/0=") {
       return new Response("Unauthorized", { status: 401 });
