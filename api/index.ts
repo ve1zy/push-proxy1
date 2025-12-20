@@ -74,6 +74,29 @@ async function sendFCMMessage(rawMessage: any, id: string) {
     throw new Error("Ambiguous FCM message: cannot have both token and topic");
   }
 
+  // Установка приоритета и data для топиков
+  if (hasTopic) {
+    rawMessage.android = {
+      ...rawMessage.android,
+      priority: "high",
+      notification: {
+        ...rawMessage.android?.notification,
+      },
+    };
+    rawMessage.data = rawMessage.data || { type: "vip_broadcast" };
+  }
+
+  // Для токенов используем то, что пришло в payload, priority тоже можно добавить
+  if (hasToken) {
+    rawMessage.android = {
+      ...rawMessage.android,
+      priority: rawMessage.android?.priority || "high",
+      notification: {
+        ...rawMessage.android?.notification,
+      },
+    };
+  }
+
   try {
     const token = await getAccessToken();
     const res = await fetch(FCM_URL, {
@@ -89,25 +112,6 @@ async function sendFCMMessage(rawMessage: any, id: string) {
 
     if (!res.ok) {
       logErr(`[${id}] FCM send failed`, { status: res.status, body: text });
-
-      if (hasToken) {
-        try {
-          const json = JSON.parse(text);
-          const isUnregistered = json?.error?.details?.some(
-            (d: any) =>
-              d?.["@type"] === "type.googleapis.com/google.firebase.fcm.v1.FcmError" &&
-              d?.errorCode === "UNREGISTERED"
-          );
-          if (isUnregistered) {
-            log(`[${id}] Token is UNREGISTERED — remove from DB`, {
-              token: rawMessage.token?.substring(0, 20) + "...",
-            });
-          }
-        } catch (e) {
-          // ignore
-        }
-      }
-
       return false;
     } else {
       log(`[${id}] FCM sent successfully`, { hasTopic, hasToken });
@@ -118,6 +122,7 @@ async function sendFCMMessage(rawMessage: any, id: string) {
     return false;
   }
 }
+
 
 // ---------- VIP broadcast: ONLY TOPIC, NO TOKEN ----------
 async function broadcastVip() {
