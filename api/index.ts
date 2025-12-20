@@ -115,30 +115,6 @@ async function sendFCMMessage(rawMessage: any, id: string) {
   }
 }
 
-// ---------- VIP broadcast: ONLY TOPIC, NO TOKEN ----------
-async function broadcastVip() {
-  const id = crypto.randomUUID();
-  log(`[${id}] Sending VIP broadcast to topic 'devfest_vip'`);
-
-  const message = {
-    topic: "devfest_vip",
-    notification: {
-      title: "VIP-опыт на ДевФест",
-      body: "Получите все привилегии: от мастер-классов и игр до личного общения со спикерами. Повысьте категорию билета!",
-    },
-    android: {
-      priority: "high",
-      notification: {
-        channelId: "mattermost",
-        sound: "default",
-      },
-    },
-    data: { type: "vip_broadcast" },
-  };
-
-  await sendFCMMessage(message, id);
-}
-
 // ---------- Mattermost payload ----------
 interface MattermostPayload {
   type: string;
@@ -204,23 +180,8 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
 // ---------- HTTP Handler ----------
 export default async function handler(req: any, res: any): Promise<void> {
   const id = crypto.randomUUID();
-  const url = new URL(req.url, "https://example.com");
 
-  // Manual trigger for VIP
-  if (req.method === "POST" && url.pathname === "/broadcast-vip") {
-    const auth = req.headers.authorization;
-    if (auth !== "Bearer sYne9ZHEflIFrFwHXKjie05rDSqoJOrKaqlAgL4QF/0=") {
-      res.status(401).send("Unauthorized");
-      return;
-    }
-
-    log(`[${id}] Manual VIP broadcast triggered`);
-    broadcastVip(); // fire-and-forget
-    res.status(202).send("OK");
-    return;
-  }
-
-  // Mattermost push
+  // Only Mattermost push is allowed
   if (req.method !== "POST") {
     res.status(405).send("Method Not Allowed");
     return;
