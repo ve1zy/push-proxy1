@@ -131,15 +131,18 @@ async function broadcastVip() {
       body: "Получите все привилегии: от мастер-классов и игр до личного общения со спикерами. Повысьте категорию билета!",
     },
     android: {
+      priority: "high", // <- важное для доставки на убитое приложение
       notification: {
         channelId: "mattermost",
         sound: "default",
       },
     },
+    data: { type: "vip_broadcast" }, // <- добавлено, чтобы FCM гарантировал доставку
   };
 
   await sendFCMMessage(message, id);
 }
+
 
 // ---------- Mattermost payload ----------
 interface MattermostPayload {
