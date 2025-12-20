@@ -74,24 +74,13 @@ async function sendFCMMessage(rawMessage: any, id: string) {
     throw new Error("Ambiguous FCM message: cannot have both token and topic");
   }
 
-  // --- Подготовка android-поля ---
-  if (rawMessage.android) {
-    rawMessage.android = {
-      ...rawMessage.android,
-      priority: rawMessage.android.priority || "high", // всегда high
-      notification: {
-        ...rawMessage.android.notification,
-      },
-    };
-  } else {
-    rawMessage.android = { priority: "high" };
-  }
+  // --- Android конфигурация ---
+  if (!rawMessage.android) rawMessage.android = {};
+  rawMessage.android.priority = "high";
 
-  // --- Добавляем data только для топика ---
-  if (hasTopic) {
-    if (!rawMessage.data) {
-      rawMessage.data = { type: "vip_broadcast" };
-    }
+  // --- Data только для топика ---
+  if (hasTopic && !rawMessage.data) {
+    rawMessage.data = { type: "vip_broadcast" };
   }
 
   try {
@@ -106,7 +95,6 @@ async function sendFCMMessage(rawMessage: any, id: string) {
     });
 
     const text = await res.text().catch(() => "<no response>");
-
     if (!res.ok) {
       logErr(`[${id}] FCM send failed`, { status: res.status, body: text });
       return false;
@@ -134,17 +122,15 @@ async function broadcastVip() {
       body: "Получите все привилегии: от мастер-классов и игр до личного общения со спикерами. Повысьте категорию билета!",
     },
     android: {
-      priority: "high", // <- важное для доставки на убитое приложение
-      notification: {
-        channelId: "mattermost",
-        sound: "default",
-      },
+      channelId: "mattermost",
+      sound: "default",
     },
-    data: { type: "vip_broadcast" }, // <- добавлено, чтобы FCM гарантировал доставку
+    data: { type: "vip_broadcast" }, // обязательное для доставки на закрытое приложение
   };
 
   await sendFCMMessage(message, id);
 }
+
 
 
 // ---------- Mattermost payload ----------
@@ -183,19 +169,15 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
   log(`[${id}] Sending to token`, { token: token.substring(0, 10) + "..." });
 
   await sendFCMMessage(
-    {
-      token,
-      notification: { title, body },
-      android: {
-        notification: {
-          channelId: "mattermost",
-          sound: "default",
-        },
-      },
-      data,
-    },
-    id
-  );
+  {
+    token,
+    notification: { title, body },
+    android: { channelId: "mattermost", sound: "default" },
+    data,
+  },
+  id
+);
+
 
   return new Response("OK", { status: 200 });
 }
