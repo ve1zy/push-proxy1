@@ -133,6 +133,7 @@ async function broadcastVip() {
         sound: "default",
       },
     },
+    data: { type: "vip_broadcast" },
   };
 
   await sendFCMMessage(message, id);
