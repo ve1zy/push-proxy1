@@ -1,17 +1,16 @@
-
-Вы сказали:
+// api/fcm-handler.ts
 import { SignJWT, importPKCS8 } from "jose";
 
 // ---------- Logging ----------
 const log = (msg: string, data?: unknown) => {
   const t = new Date().toISOString();
-  console.log([${t}] ${msg}, data ? JSON.stringify(data, null, 2) : "");
+  console.log(`[${t}] ${msg}`, data ? JSON.stringify(data, null, 2) : "");
 };
 
 const logErr = (msg: string, err: unknown) => {
   const t = new Date().toISOString();
   console.error(
-    [${t}] ERROR: ${msg},
+    `[${t}] ERROR: ${msg}`,
     err instanceof Error ? err.stack || err.message : JSON.stringify(err)
   );
 };
@@ -30,11 +29,10 @@ if (!PRIVATE_KEY?.trim()) {
 
 log("Using client_email", { email: CLIENT_EMAIL });
 
-const FCM_URL = https://fcm.googleapis.com/v1/projects/${PROJECT_ID}/messages:send;
+const FCM_URL = `https://fcm.googleapis.com/v1/projects/${PROJECT_ID}/messages:send`;
 
 // ---------- Auth ----------
 async function getAccessToken(): Promise<string> {
-  // Используем importPKCS8 — он принимает PEM-строку
   const privateKey = await importPKCS8(PRIVATE_KEY, "RS256");
 
   const jwt = await new SignJWT({
@@ -61,19 +59,18 @@ async function getAccessToken(): Promise<string> {
   if (!res.ok) {
     const text = await res.text().catch(() => "<no response>");
     logErr("Auth failed", { response: text });
-    throw new Error(Auth failed: ${text});
+    throw new Error(`Auth failed: ${text}`);
   }
   return (await res.json()).access_token;
 }
 
 // ---------- FCM send (strictly for topic or token) ----------
 async function sendFCMMessage(rawMessage: any, id: string) {
-  // 🔒 Убедимся, что не смешиваем token и topic
   const hasToken = "token" in rawMessage;
   const hasTopic = "topic" in rawMessage;
 
   if (hasToken && hasTopic) {
-    logErr([${id}] FATAL: message contains both 'token' and 'topic'!, rawMessage);
+    logErr(`[${id}] FATAL: message contains both 'token' and 'topic'!`, rawMessage);
     throw new Error("Ambiguous FCM message: cannot have both token and topic");
   }
 
@@ -82,7 +79,7 @@ async function sendFCMMessage(rawMessage: any, id: string) {
     const res = await fetch(FCM_URL, {
       method: "POST",
       headers: {
-        Authorization: Bearer ${token},
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ message: rawMessage }),
@@ -91,9 +88,8 @@ async function sendFCMMessage(rawMessage: any, id: string) {
     const text = await res.text().catch(() => "<no response>");
 
     if (!res.ok) {
-      logErr([${id}] FCM send failed, { status: res.status, body: text });
+      logErr(`[${id}] FCM send failed`, { status: res.status, body: text });
 
-      // Проверка на UNREGISTERED — только если был token
       if (hasToken) {
         try {
           const json = JSON.parse(text);
@@ -103,7 +99,7 @@ async function sendFCMMessage(rawMessage: any, id: string) {
               d?.errorCode === "UNREGISTERED"
           );
           if (isUnregistered) {
-            log([${id}] Token is UNREGISTERED — remove from DB, {
+            log(`[${id}] Token is UNREGISTERED — remove from DB`, {
               token: rawMessage.token?.substring(0, 20) + "...",
             });
           }
@@ -114,11 +110,11 @@ async function sendFCMMessage(rawMessage: any, id: string) {
 
       return false;
     } else {
-      log([${id}] FCM sent successfully, { hasTopic, hasToken });
+      log(`[${id}] FCM sent successfully`, { hasTopic, hasToken });
       return true;
     }
   } catch (e) {
-    logErr([${id}] Exception in sendFCMMessage, e);
+    logErr(`[${id}] Exception in sendFCMMessage`, e);
     return false;
   }
 }
@@ -126,7 +122,7 @@ async function sendFCMMessage(rawMessage: any, id: string) {
 // ---------- VIP broadcast: ONLY TOPIC, NO TOKEN ----------
 async function broadcastVip() {
   const id = crypto.randomUUID();
-  log([${id}] Sending VIP broadcast to topic 'devfest_vip');
+  log(`[${id}] Sending VIP broadcast to topic 'devfest_vip'`);
 
   const message = {
     topic: "devfest_vip",
@@ -178,7 +174,7 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
     data[key] = String(payload[key] ?? "");
   }
 
-  log([${id}] Sending to token, { token: token.substring(0, 10) + "..." });
+  log(`[${id}] Sending to token`, { token: token.substring(0, 10) + "..." });
 
   await sendFCMMessage(
     {
@@ -202,8 +198,7 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
 export default async function handler(req: any, res: any): Promise<void> {
   const id = crypto.randomUUID();
 
-  // Исправленный способ получения pathname
-  const url = new URL(req.url, https://example.com); // используем фиктивный домен
+  const url = new URL(req.url, "https://example.com");
 
   // Manual trigger for VIP
   if (req.method === "POST" && url.pathname === "/broadcast-vip") {
@@ -212,7 +207,7 @@ export default async function handler(req: any, res: any): Promise<void> {
       res.status(401).send("Unauthorized");
       return;
     }
-    log([${id}] Manual VIP broadcast triggered);
+    log(`[${id}] Manual VIP broadcast triggered`);
     broadcastVip(); // fire-and-forget
     res.status(202).send("OK");
     return;
@@ -224,7 +219,6 @@ export default async function handler(req: any, res: any): Promise<void> {
     return;
   }
 
-  // Читаем тело запроса как JSON в Node.js
   let payload;
   try {
     let body = "";
@@ -235,7 +229,7 @@ export default async function handler(req: any, res: any): Promise<void> {
 
     payload = JSON.parse(body);
   } catch (e) {
-    logErr([${id}] Invalid JSON, e);
+    logErr(`[${id}] Invalid JSON`, e);
     res.status(400).send("Invalid JSON");
     return;
   }
@@ -245,7 +239,7 @@ export default async function handler(req: any, res: any): Promise<void> {
     return;
   }
 
-  log([${id}] Mattermost request, payload);
+  log(`[${id}] Mattermost request`, payload);
   await handleMattermost(payload, id);
   res.status(200).send("OK");
 }
