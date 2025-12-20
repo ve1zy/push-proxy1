@@ -104,21 +104,23 @@ async function broadcastVip() {
   log(`[${id}] VIP broadcast (data-only) to topic devfest_vip`);
 
   const message = {
-  topic: "devfest_vip",
-  data: {
-    type: "vip",
-    title: "VIP-опыт на ДевФест",
-    body:
-      "Получите все привилегии: от мастер-классов и игр до личного общения со спикерами.",
-    ts: Date.now().toString(),
-  },
-  android: {
-    priority: "HIGH",
-    ttl: "60s",
-    collapseKey: "vip_broadcast",
-    directBootOk: true,
-  },
-};
+    topic: "devfest_vip",
+    data: {
+      type: "vip",
+      title: "VIP-опыт на ДевФест",
+      body:
+        "Получите все привилегии: от мастер-классов и игр до личного общения со спикерами.",
+      ts: Date.now().toString(),
+    },
+    android: {
+      priority: "HIGH",
+      ttl: "60s",
+    },
+  };
+
+  await sendFCMMessage(message, id);
+}
+
 
 
   await sendFCMMessage(message, id);
