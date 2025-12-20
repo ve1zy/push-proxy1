@@ -74,27 +74,24 @@ async function sendFCMMessage(rawMessage: any, id: string) {
     throw new Error("Ambiguous FCM message: cannot have both token and topic");
   }
 
-  // Установка приоритета и data для топиков
-  if (hasTopic) {
+  // --- Подготовка android-поля ---
+  if (rawMessage.android) {
     rawMessage.android = {
       ...rawMessage.android,
-      priority: "high",
+      priority: rawMessage.android.priority || "high", // всегда high
       notification: {
-        ...rawMessage.android?.notification,
+        ...rawMessage.android.notification,
       },
     };
-    rawMessage.data = rawMessage.data || { type: "vip_broadcast" };
+  } else {
+    rawMessage.android = { priority: "high" };
   }
 
-  // Для токенов используем то, что пришло в payload, priority тоже можно добавить
-  if (hasToken) {
-    rawMessage.android = {
-      ...rawMessage.android,
-      priority: rawMessage.android?.priority || "high",
-      notification: {
-        ...rawMessage.android?.notification,
-      },
-    };
+  // --- Добавляем data только для топика ---
+  if (hasTopic) {
+    if (!rawMessage.data) {
+      rawMessage.data = { type: "vip_broadcast" };
+    }
   }
 
   try {
@@ -122,6 +119,7 @@ async function sendFCMMessage(rawMessage: any, id: string) {
     return false;
   }
 }
+
 
 
 // ---------- VIP broadcast: ONLY TOPIC, NO TOKEN ----------
