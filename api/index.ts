@@ -28,7 +28,7 @@ if (!PRIVATE_KEY?.trim()) {
 
 log("Using client_email", { email: CLIENT_EMAIL });
 
-const FCM_URL = `https://fcm.googleapis.com/v1/projects/  ${PROJECT_ID}/messages:send`;
+const FCM_URL = `https://fcm.googleapis.com/v1/projects/${PROJECT_ID}/messages:send`;
 
 // ---------- Auth ----------
 async function getAccessToken(): Promise<string> {
@@ -37,8 +37,8 @@ async function getAccessToken(): Promise<string> {
 
   const jwt = await new SignJWT({
     iss: CLIENT_EMAIL,
-    scope: "https://www.googleapis.com/auth/firebase.messaging  ",
-    aud: "https://oauth2.googleapis.com/token  ",
+    scope: "https://www.googleapis.com/auth/firebase.messaging",
+    aud: "https://oauth2.googleapis.com/token",
     exp: Math.floor(Date.now() / 1000) + 3600,
     iat: Math.floor(Date.now() / 1000),
   })
@@ -47,7 +47,7 @@ async function getAccessToken(): Promise<string> {
 
   log("Generated JWT", { jwt: jwt.substring(0, 100) + "..." });
 
-  const res = await fetch("https://oauth2.googleapis.com/token  ", {
+  const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -201,7 +201,7 @@ export default async function handler(req: any, res: any): Promise<void> {
   const id = crypto.randomUUID();
 
   // Исправленный способ получения pathname
-  const url = new URL(req.url, `https://example.com  `); // используем фиктивный домен
+  const url = new URL(req.url, `https://example.com`); // используем фиктивный домен
 
   // Manual trigger for VIP
   if (req.method === "POST" && url.pathname === "/broadcast-vip") {
