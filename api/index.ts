@@ -127,6 +127,7 @@ async function broadcastVip() {
       body: "Получите все привилегии: от мастер-классов и игр до личного общения со спикерами. Повысьте категорию билета!",
     },
     android: {
+      priority: "high",
       notification: {
         channelId: "mattermost",
         sound: "default",
