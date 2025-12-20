@@ -32,7 +32,6 @@ const FCM_URL = `https://fcm.googleapis.com/v1/projects/${PROJECT_ID}/messages:s
 
 // ---------- Auth ----------
 async function getAccessToken(): Promise<string> {
-  // Используем importPKCS8 — он принимает PEM-строку
   const privateKey = await importPKCS8(PRIVATE_KEY, "RS256");
 
   const jwt = await new SignJWT({
@@ -44,8 +43,6 @@ async function getAccessToken(): Promise<string> {
   })
     .setProtectedHeader({ alg: "RS256", typ: "JWT" })
     .sign(privateKey);
-
-  log("Generated JWT", { jwt: jwt.substring(0, 100) + "..." });
 
   const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
@@ -61,18 +58,18 @@ async function getAccessToken(): Promise<string> {
     logErr("Auth failed", { response: text });
     throw new Error(`Auth failed: ${text}`);
   }
+
   return (await res.json()).access_token;
 }
 
-// ---------- FCM send (strictly for topic or token) ----------
+// ---------- FCM send ----------
 async function sendFCMMessage(rawMessage: any, id: string) {
-  // 🔒 Убедимся, что не смешиваем token и topic
   const hasToken = "token" in rawMessage;
   const hasTopic = "topic" in rawMessage;
 
   if (hasToken && hasTopic) {
-    logErr(`[${id}] FATAL: message contains both 'token' and 'topic'!`, rawMessage);
-    throw new Error("Ambiguous FCM message: cannot have both token and topic");
+    logErr(`[${id}] FATAL: token + topic together`, rawMessage);
+    throw new Error("FCM message cannot contain both token and topic");
   }
 
   try {
@@ -90,53 +87,35 @@ async function sendFCMMessage(rawMessage: any, id: string) {
 
     if (!res.ok) {
       logErr(`[${id}] FCM send failed`, { status: res.status, body: text });
-
-      // Проверка на UNREGISTERED — только если был token
-      if (hasToken) {
-        try {
-          const json = JSON.parse(text);
-          const isUnregistered = json?.error?.details?.some(
-            (d: any) =>
-              d?.["@type"] === "type.googleapis.com/google.firebase.fcm.v1.FcmError" &&
-              d?.errorCode === "UNREGISTERED"
-          );
-          if (isUnregistered) {
-            log(`[${id}] Token is UNREGISTERED — remove from DB`, {
-              token: rawMessage.token?.substring(0, 20) + "...",
-            });
-          }
-        } catch (e) {
-          // ignore
-        }
-      }
-
       return false;
-    } else {
-      log(`[${id}] FCM sent successfully`, { hasTopic, hasToken });
-      return true;
     }
+
+    log(`[${id}] FCM sent`, { hasTopic, hasToken });
+    return true;
   } catch (e) {
     logErr(`[${id}] Exception in sendFCMMessage`, e);
     return false;
   }
 }
 
-// ---------- VIP broadcast: ONLY TOPIC, NO TOKEN ----------
+// ---------- VIP broadcast (DATA-ONLY TOPIC) ----------
 async function broadcastVip() {
   const id = crypto.randomUUID();
-  log(`[${id}] Sending VIP broadcast to topic 'devfest_vip'`);
+  log(`[${id}] VIP broadcast (data-only) to topic devfest_vip`);
 
   const message = {
     topic: "devfest_vip",
-    notification: {
+    data: {
+      type: "vip",
       title: "VIP-опыт на ДевФест",
-      body: "Получите все привилегии: от мастер-классов и игр до личного общения со спикерами. Повысьте категорию билета!",
+      body:
+        "Получите все привилегии: от мастер-классов и игр до личного общения со спикерами.",
+      ts: Date.now().toString(),
     },
     android: {
-      notification: {
-        channelId: "mattermost",
-        sound: "default",
-      },
+      priority: "HIGH",
+      ttl: "60s",
+      collapse_key: "vip_broadcast",
     },
   };
 
@@ -152,12 +131,13 @@ interface MattermostPayload {
   [key: string]: unknown;
 }
 
-// ---------- Mattermost push ----------
+// ---------- Mattermost push (TOKEN) ----------
 async function handleMattermost(payload: MattermostPayload, id: string) {
   const { type, platform, device_id: token } = payload;
 
   if (type === "test") return new Response("OK", { status: 200 });
-  if (type !== "message" && type !== "clear") return new Response("Bad type", { status: 400 });
+  if (type !== "message" && type !== "clear")
+    return new Response("Bad type", { status: 400 });
   if (type === "clear") return new Response("OK", { status: 200 });
 
   let p = platform;
@@ -168,27 +148,37 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
   const title = payload.channel_name || payload.sender_name || "Mattermost";
   const body = typeof payload.message === "string" ? payload.message : "";
 
-  const data = {};
+  const data: Record<string, string> = {};
   for (const key of [
-    "ack_id", "server_id", "channel_id", "channel_name", "sender_id",
-    "sender_name", "category", "type", "badge", "post_id", "version"
+    "ack_id",
+    "server_id",
+    "channel_id",
+    "channel_name",
+    "sender_id",
+    "sender_name",
+    "category",
+    "type",
+    "badge",
+    "post_id",
+    "version",
   ]) {
     data[key] = String(payload[key] ?? "");
   }
 
-  log(`[${id}] Sending to token`, { token: token.substring(0, 10) + "..." });
+  log(`[${id}] Sending token push`, { token: token.substring(0, 10) + "..." });
 
   await sendFCMMessage(
     {
       token,
-      notification: { title, body },
-      android: {
-        notification: {
-          channelId: "mattermost",
-          sound: "default",
-        },
+      data: {
+        ...data,
+        title,
+        body,
       },
-      data,
+      android: {
+        priority: "HIGH",
+        ttl: "60s",
+      },
     },
     id
   );
@@ -199,47 +189,36 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
 // ---------- HTTP Handler ----------
 export default async function handler(req: any, res: any): Promise<void> {
   const id = crypto.randomUUID();
+  const url = new URL(req.url, "https://example.com");
 
-  // Исправленный способ получения pathname
-  const url = new URL(req.url, `https://example.com`); // используем фиктивный домен
-
-  // Manual trigger for VIP
+  // Manual VIP trigger
   if (req.method === "POST" && url.pathname === "/broadcast-vip") {
     const auth = req.headers.authorization;
     if (auth !== "Bearer sYne9ZHEflIFrFwHXKjie05rDSqoJOrKaqlAgL4QF/0=") {
       res.status(401).send("Unauthorized");
       return;
     }
-    log(`[${id}] Manual VIP broadcast triggered`);
+
+    log(`[${id}] Manual VIP broadcast`);
     broadcastVip(); // fire-and-forget
     res.status(202).send("OK");
     return;
   }
 
-  // Mattermost push
   if (req.method !== "POST") {
     res.status(405).send("Method Not Allowed");
     return;
   }
 
-  // Читаем тело запроса как JSON в Node.js
   let payload;
   try {
     let body = "";
-    req.on("data", (chunk: string) => {
-      body += chunk;
-    });
+    req.on("data", (chunk: string) => (body += chunk));
     await new Promise((resolve) => req.on("end", resolve));
-
     payload = JSON.parse(body);
   } catch (e) {
     logErr(`[${id}] Invalid JSON`, e);
     res.status(400).send("Invalid JSON");
-    return;
-  }
-
-  if (typeof payload !== "object" || payload === null) {
-    res.status(400).send("Payload must be an object");
     return;
   }
 
@@ -248,7 +227,7 @@ export default async function handler(req: any, res: any): Promise<void> {
   res.status(200).send("OK");
 }
 
-// ---------- Export for Vercel Node.js Runtime ----------
+// ---------- Vercel ----------
 export const config = {
   runtime: "nodejs",
 };
