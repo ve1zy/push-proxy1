@@ -17,24 +17,18 @@ const logErr = (msg: string, err: unknown) => {
 
 // ---------- Config ----------
 const SA = JSON.parse(process.env.SERVICE_ACCOUNT_JSON || "{}");
-const {
-  project_id: PROJECT_ID,
-  client_email: CLIENT_EMAIL,
-  private_key: PRIVATE_KEY,
-} = SA;
+const { project_id: PROJECT_ID, client_email: CLIENT_EMAIL, private_key: PRIVATE_KEY } = SA;
 
 if (!PRIVATE_KEY?.trim()) {
   throw new Error("Missing private_key in SERVICE_ACCOUNT_JSON");
 }
 
 log("Using client_email", { email: CLIENT_EMAIL });
-
 const FCM_URL = `https://fcm.googleapis.com/v1/projects/${PROJECT_ID}/messages:send`;
 
 // ---------- Auth ----------
 async function getAccessToken(): Promise<string> {
   const privateKey = await importPKCS8(PRIVATE_KEY, "RS256");
-
   const jwt = await new SignJWT({
     iss: CLIENT_EMAIL,
     scope: "https://www.googleapis.com/auth/firebase.messaging",
@@ -61,6 +55,7 @@ async function getAccessToken(): Promise<string> {
     logErr("Auth failed", { response: text });
     throw new Error(`Auth failed: ${text}`);
   }
+
   return (await res.json()).access_token;
 }
 
@@ -72,15 +67,6 @@ async function sendFCMMessage(rawMessage: any, id: string) {
   if (hasToken && hasTopic) {
     logErr(`[${id}] FATAL: message contains both 'token' and 'topic'!`, rawMessage);
     throw new Error("Ambiguous FCM message: cannot have both token and topic");
-  }
-
-  // --- Android конфигурация ---
-  if (!rawMessage.android) rawMessage.android = {};
-  rawMessage.android.priority = "high";
-
-  // --- Data только для топика ---
-  if (hasTopic && !rawMessage.data) {
-    rawMessage.data = { type: "vip_broadcast" };
   }
 
   try {
@@ -95,8 +81,29 @@ async function sendFCMMessage(rawMessage: any, id: string) {
     });
 
     const text = await res.text().catch(() => "<no response>");
+
     if (!res.ok) {
       logErr(`[${id}] FCM send failed`, { status: res.status, body: text });
+
+      if (hasToken) {
+        try {
+          const json = JSON.parse(text);
+          const isUnregistered = json?.error?.details?.some(
+            (d: any) =>
+              d?.["@type"] === "type.googleapis.com/google.firebase.fcm.v1.FcmError" &&
+              d?.errorCode === "UNREGISTERED"
+          );
+
+          if (isUnregistered) {
+            log(`[${id}] Token is UNREGISTERED — remove from DB`, {
+              token: rawMessage.token?.substring(0, 20) + "...",
+            });
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+
       return false;
     } else {
       log(`[${id}] FCM sent successfully`, { hasTopic, hasToken });
@@ -107,8 +114,6 @@ async function sendFCMMessage(rawMessage: any, id: string) {
     return false;
   }
 }
-
-
 
 // ---------- VIP broadcast: ONLY TOPIC, NO TOKEN ----------
 async function broadcastVip() {
@@ -122,16 +127,15 @@ async function broadcastVip() {
       body: "Получите все привилегии: от мастер-классов и игр до личного общения со спикерами. Повысьте категорию билета!",
     },
     android: {
-      channelId: "mattermost",
-      sound: "default",
+      notification: {
+        channelId: "mattermost",
+        sound: "default",
+      },
     },
-    data: { type: "vip_broadcast" }, // обязательное для доставки на закрытое приложение
   };
 
   await sendFCMMessage(message, id);
 }
-
-
 
 // ---------- Mattermost payload ----------
 interface MattermostPayload {
@@ -160,8 +164,17 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
 
   const data = {};
   for (const key of [
-    "ack_id", "server_id", "channel_id", "channel_name", "sender_id",
-    "sender_name", "category", "type", "badge", "post_id", "version"
+    "ack_id",
+    "server_id",
+    "channel_id",
+    "channel_name",
+    "sender_id",
+    "sender_name",
+    "category",
+    "type",
+    "badge",
+    "post_id",
+    "version",
   ]) {
     data[key] = String(payload[key] ?? "");
   }
@@ -169,15 +182,19 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
   log(`[${id}] Sending to token`, { token: token.substring(0, 10) + "..." });
 
   await sendFCMMessage(
-  {
-    token,
-    notification: { title, body },
-    android: { channelId: "mattermost", sound: "default" },
-    data,
-  },
-  id
-);
-
+    {
+      token,
+      notification: { title, body },
+      android: {
+        notification: {
+          channelId: "mattermost",
+          sound: "default",
+        },
+      },
+      data,
+    },
+    id
+  );
 
   return new Response("OK", { status: 200 });
 }
@@ -185,7 +202,6 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
 // ---------- HTTP Handler ----------
 export default async function handler(req: any, res: any): Promise<void> {
   const id = crypto.randomUUID();
-
   const url = new URL(req.url, "https://example.com");
 
   // Manual trigger for VIP
@@ -195,6 +211,7 @@ export default async function handler(req: any, res: any): Promise<void> {
       res.status(401).send("Unauthorized");
       return;
     }
+
     log(`[${id}] Manual VIP broadcast triggered`);
     broadcastVip(); // fire-and-forget
     res.status(202).send("OK");
@@ -214,7 +231,6 @@ export default async function handler(req: any, res: any): Promise<void> {
       body += chunk;
     });
     await new Promise((resolve) => req.on("end", resolve));
-
     payload = JSON.parse(body);
   } catch (e) {
     logErr(`[${id}] Invalid JSON`, e);
