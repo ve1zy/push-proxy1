@@ -28,16 +28,17 @@ if (!PRIVATE_KEY?.trim()) {
 
 log("Using client_email", { email: CLIENT_EMAIL });
 
-const FCM_URL = `https://fcm.googleapis.com/v1/projects/${PROJECT_ID}/messages:send`;
+const FCM_URL = `https://fcm.googleapis.com/v1/projects/  ${PROJECT_ID}/messages:send`;
 
 // ---------- Auth ----------
 async function getAccessToken(): Promise<string> {
+  // Используем importPKCS8 — он принимает PEM-строку
   const privateKey = await importPKCS8(PRIVATE_KEY, "RS256");
 
   const jwt = await new SignJWT({
     iss: CLIENT_EMAIL,
-    scope: "https://www.googleapis.com/auth/firebase.messaging",
-    aud: "https://oauth2.googleapis.com/token",
+    scope: "https://www.googleapis.com/auth/firebase.messaging  ",
+    aud: "https://oauth2.googleapis.com/token  ",
     exp: Math.floor(Date.now() / 1000) + 3600,
     iat: Math.floor(Date.now() / 1000),
   })
@@ -46,7 +47,7 @@ async function getAccessToken(): Promise<string> {
 
   log("Generated JWT", { jwt: jwt.substring(0, 100) + "..." });
 
-  const res = await fetch("https://oauth2.googleapis.com/token", {
+  const res = await fetch("https://oauth2.googleapis.com/token  ", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -63,8 +64,9 @@ async function getAccessToken(): Promise<string> {
   return (await res.json()).access_token;
 }
 
-// ---------- FCM send ----------
+// ---------- FCM send (strictly for topic or token) ----------
 async function sendFCMMessage(rawMessage: any, id: string) {
+  // 🔒 Убедимся, что не смешиваем token и topic
   const hasToken = "token" in rawMessage;
   const hasTopic = "topic" in rawMessage;
 
@@ -89,6 +91,7 @@ async function sendFCMMessage(rawMessage: any, id: string) {
     if (!res.ok) {
       logErr(`[${id}] FCM send failed`, { status: res.status, body: text });
 
+      // Проверка на UNREGISTERED — только если был token
       if (hasToken) {
         try {
           const json = JSON.parse(text);
@@ -118,7 +121,7 @@ async function sendFCMMessage(rawMessage: any, id: string) {
   }
 }
 
-// ---------- VIP broadcast: ONLY TOPIC ----------
+// ---------- VIP broadcast: ONLY TOPIC, NO TOKEN ----------
 async function broadcastVip() {
   const id = crypto.randomUUID();
   log(`[${id}] Sending VIP broadcast to topic 'devfest_vip'`);
@@ -140,7 +143,7 @@ async function broadcastVip() {
   await sendFCMMessage(message, id);
 }
 
-// ---------- MATTERMOST HANDLER ----------
+// ---------- Mattermost payload ----------
 interface MattermostPayload {
   type: string;
   platform: string;
@@ -149,6 +152,7 @@ interface MattermostPayload {
   [key: string]: unknown;
 }
 
+// ---------- Mattermost push ----------
 async function handleMattermost(payload: MattermostPayload, id: string) {
   const { type, platform, device_id: token } = payload;
 
@@ -195,8 +199,11 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
 // ---------- HTTP Handler ----------
 export default async function handler(req: any, res: any): Promise<void> {
   const id = crypto.randomUUID();
-  const url = new URL(req.url, `https://example.com`);
 
+  // Исправленный способ получения pathname
+  const url = new URL(req.url, `https://example.com  `); // используем фиктивный домен
+
+  // Manual trigger for VIP
   if (req.method === "POST" && url.pathname === "/broadcast-vip") {
     const auth = req.headers.authorization;
     if (auth !== "Bearer sYne9ZHEflIFrFwHXKjie05rDSqoJOrKaqlAgL4QF/0=") {
@@ -209,11 +216,13 @@ export default async function handler(req: any, res: any): Promise<void> {
     return;
   }
 
+  // Mattermost push
   if (req.method !== "POST") {
     res.status(405).send("Method Not Allowed");
     return;
   }
 
+  // Читаем тело запроса как JSON в Node.js
   let payload;
   try {
     let body = "";
@@ -221,6 +230,7 @@ export default async function handler(req: any, res: any): Promise<void> {
       body += chunk;
     });
     await new Promise((resolve) => req.on("end", resolve));
+
     payload = JSON.parse(body);
   } catch (e) {
     logErr(`[${id}] Invalid JSON`, e);
@@ -237,13 +247,6 @@ export default async function handler(req: any, res: any): Promise<void> {
   await handleMattermost(payload, id);
   res.status(200).send("OK");
 }
-
-// ---------- Start periodic VIP broadcast ----------
-setInterval(() => {
-  broadcastVip().catch((err) => {
-    logErr("Failed to send periodic VIP broadcast", err);
-  });
-}, 60 * 1000); // каждые 60 секунд
 
 // ---------- Export for Vercel Node.js Runtime ----------
 export const config = {
