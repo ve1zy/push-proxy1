@@ -1,5 +1,6 @@
 // api/fcm-handler.ts
 import { SignJWT, importPKCS8 } from "jose";
+import { buffer } from "micro";
 
 // ---------- Logging ----------
 const log = (msg: string, data?: unknown) => {
@@ -59,14 +60,18 @@ async function getAccessToken(): Promise<string> {
   return (await res.json()).access_token;
 }
 
-// ---------- FCM send (strictly for topic or token) ----------
-async function sendFCMMessage(rawMessage: any, id: string) {
+// ---------- FCM send (token only) ----------
+async function sendFCMMessage(rawMessage: any, id: string): Promise<boolean> {
   const hasToken = "token" in rawMessage;
   const hasTopic = "topic" in rawMessage;
 
-  if (hasToken && hasTopic) {
-    logErr(`[${id}] FATAL: message contains both 'token' and 'topic'!`, rawMessage);
-    throw new Error("Ambiguous FCM message: cannot have both token and topic");
+  if (hasTopic) {
+    logErr(`[${id}] Topic messages are disabled`, rawMessage);
+    return false;
+  }
+  if (!hasToken) {
+    logErr(`[${id}] No token provided`, rawMessage);
+    return false;
   }
 
   try {
@@ -85,28 +90,26 @@ async function sendFCMMessage(rawMessage: any, id: string) {
     if (!res.ok) {
       logErr(`[${id}] FCM send failed`, { status: res.status, body: text });
 
-      if (hasToken) {
-        try {
-          const json = JSON.parse(text);
-          const isUnregistered = json?.error?.details?.some(
-            (d: any) =>
-              d?.["@type"] === "type.googleapis.com/google.firebase.fcm.v1.FcmError" &&
-              d?.errorCode === "UNREGISTERED"
-          );
+      try {
+        const json = JSON.parse(text);
+        const isUnregistered = json?.error?.details?.some(
+          (d: any) =>
+            d?.["@type"] === "type.googleapis.com/google.firebase.fcm.v1.FcmError" &&
+            d?.errorCode === "UNREGISTERED"
+        );
 
-          if (isUnregistered) {
-            log(`[${id}] Token is UNREGISTERED — remove from DB`, {
-              token: rawMessage.token?.substring(0, 20) + "...",
-            });
-          }
-        } catch (e) {
-          // ignore
+        if (isUnregistered) {
+          log(`[${id}] Token is UNREGISTERED — remove from DB`, {
+            token: rawMessage.token?.substring(0, 20) + "...",
+          });
         }
+      } catch (e) {
+        // ignore JSON parse errors
       }
 
       return false;
     } else {
-      log(`[${id}] FCM sent successfully`, { hasTopic, hasToken });
+      log(`[${id}] FCM sent successfully`);
       return true;
     }
   } catch (e) {
@@ -121,26 +124,49 @@ interface MattermostPayload {
   platform: string;
   device_id?: string;
   message?: string;
+  channel_name?: string;
+  sender_name?: string;
+  ack_id?: string;
+  server_id?: string;
+  channel_id?: string;
+  sender_id?: string;
+  category?: string;
+  badge?: string;
+  post_id?: string;
+  version?: string;
   [key: string]: unknown;
 }
 
-// ---------- Mattermost push ----------
-async function handleMattermost(payload: MattermostPayload, id: string) {
+// ---------- Handle Mattermost Push ----------
+async function handleMattermost(payload: MattermostPayload, id: string): Promise<{ status: number; message: string }> {
   const { type, platform, device_id: token } = payload;
 
-  if (type === "test") return new Response("OK", { status: 200 });
-  if (type !== "message" && type !== "clear") return new Response("Bad type", { status: 400 });
-  if (type === "clear") return new Response("OK", { status: 200 });
+  if (type === "test") {
+    return { status: 200, message: "OK" };
+  }
+
+  if (type !== "message" && type !== "clear") {
+    return { status: 400, message: "Bad type" };
+  }
+
+  if (type === "clear") {
+    return { status: 200, message: "OK" };
+  }
 
   let p = platform;
   if (p === "android_rn" || p === "android_rn-v2") p = "android";
-  if (p !== "android") return new Response("Only Android supported", { status: 400 });
-  if (!token) return new Response("No device_id", { status: 400 });
+  if (p !== "android") {
+    return { status: 400, message: "Only Android supported" };
+  }
+
+  if (!token) {
+    return { status: 400, message: "No device_id" };
+  }
 
   const title = payload.channel_name || payload.sender_name || "Mattermost";
   const body = typeof payload.message === "string" ? payload.message : "";
 
-  const data = {};
+  const data: Record<string, string> = {};
   for (const key of [
     "ack_id",
     "server_id",
@@ -154,12 +180,12 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
     "post_id",
     "version",
   ]) {
-    data[key] = String(payload[key] ?? "");
+    data[key] = String(payload[key as keyof typeof payload] ?? "");
   }
 
   log(`[${id}] Sending to token`, { token: token.substring(0, 10) + "..." });
 
-  await sendFCMMessage(
+  const success = await sendFCMMessage(
     {
       token,
       notification: { title, body },
@@ -174,26 +200,22 @@ async function handleMattermost(payload: MattermostPayload, id: string) {
     id
   );
 
-  return new Response("OK", { status: 200 });
+  return { status: success ? 200 : 500, message: success ? "OK" : "Failed to send" };
 }
 
-// ---------- HTTP Handler ----------
+// ---------- Next.js API Handler ----------
 export default async function handler(req: any, res: any): Promise<void> {
   const id = crypto.randomUUID();
 
-  // Only Mattermost push is allowed
   if (req.method !== "POST") {
     res.status(405).send("Method Not Allowed");
     return;
   }
 
-  let payload;
+  let payload: any;
   try {
-    let body = "";
-    req.on("data", (chunk: string) => {
-      body += chunk;
-    });
-    await new Promise((resolve) => req.on("end", resolve));
+    const buf = await buffer(req);
+    const body = buf.toString("utf8");
     payload = JSON.parse(body);
   } catch (e) {
     logErr(`[${id}] Invalid JSON`, e);
@@ -207,11 +229,15 @@ export default async function handler(req: any, res: any): Promise<void> {
   }
 
   log(`[${id}] Mattermost request`, payload);
-  await handleMattermost(payload, id);
-  res.status(200).send("OK");
+
+  const result = await handleMattermost(payload, id);
+  res.status(result.status).send(result.message);
 }
 
-// ---------- Export for Vercel Node.js Runtime ----------
+// ---------- Vercel Config ----------
 export const config = {
+  api: {
+    bodyParser: false, // required for buffer()
+  },
   runtime: "nodejs",
 };
